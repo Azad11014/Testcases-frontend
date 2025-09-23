@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project Management Dashboard</title>
+    <link rel="stylesheet" href="style/styles.css">
+    <link rel="stylesheet" href="style/enhanced-brd.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Project Management Dashboard</h1>
+        </header>
+
+        <!-- Step 1: Project Selection -->
+        <div id="step1" class="step active">
+            <div class="section">
+                <div class="section-header">
+                    <h2>Select a Project</h2>
+                    <button id="createProjectBtn" class="btn btn-primary">Create New Project</button>
+                </div>
+                
+                <div id="projectsList" class="projects-list">
+                    <div class="loading">Loading projects...</div>
+                </div>
+            </div>
+
+            <!-- Create Project Modal -->
+            <div id="createProjectModal" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Create New Project</h3>
+                        <span class="close">&times;</span>
+                    </div>
+                    <form id="createProjectForm">
+                        <div class="form-group">
+                            <label for="projectName">Project Name</label>
+                            <input type="text" id="projectName" name="name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="projectDescription">Description</label>
+                            <textarea id="projectDescription" name="description" rows="3"></textarea>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" id="cancelCreate">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Create Project</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 2: Project Details -->
+        <div id="step2" class="step">
+            <div class="section">
+                <div class="section-header">
+                    <h2 id="selectedProjectTitle">Project Details</h2>
+                    <button id="backToProjects" class="btn btn-secondary">Back to Projects</button>
+                </div>
+                
+                <div class="project-info">
+                    <div class="info-card">
+                        <h3>Project Information</h3>
+                        <p id="projectDescription"></p>
+                    </div>
+                    
+                    <div class="documents-section">
+                        <div class="section-header">
+                            <h3>Documents</h3>
+                            <button id="uploadDocBtn" class="btn btn-primary">Upload Document</button>
+                        </div>
+                        <div id="documentsList" class="documents-list">
+                            <!-- Documents will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Upload Document Modal -->
+            <div id="uploadDocModal" class="modal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Upload Document</h3>
+                        <span class="close">&times;</span>
+                    </div>
+                    <form id="uploadDocForm">
+                        <div class="form-group">
+                            <label for="docFile">Select File</label>
+                            <input type="file" id="docFile" name="file" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="docType">Document Type</label>
+                            <select id="docType" name="doctype" required>
+                                <option value="">Select document type</option>
+                                <option value="BRD">BRD (Business Requirements Document)</option>
+                                <option value="FRD">FRD (Functional Requirements Document)</option>
+                            </select>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" id="cancelUpload">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Upload</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 3: Document Viewer -->
+        <div id="step3" class="step">
+            <div class="section">
+                <div class="section-header">
+                    <div>
+                        <h2 id="documentTitle">Document Content</h2>
+                        <p id="documentMeta" class="document-subtitle"></p>
+                    </div>
+                    <div class="header-actions">
+                        <span id="documentTypeHeader" class="document-type-large"></span>
+                        <button id="backToProject" class="btn btn-secondary">Back to Project</button>
+                    </div>
+                </div>
+                
+                <div id="documentContent" class="document-content">
+                    <div class="loading">Loading document content...</div>
+                </div>
+
+                <!-- Document Actions - Dynamic based on document type -->
+                <div class="document-actions" id="documentActions" style="display: none;">
+                    <div class="section-header">
+                        <h3 id="actionsTitle">Document Actions</h3>
+                    </div>
+                    
+                    <!-- FRD Document Actions -->
+                    <div id="frdActions" class="action-buttons" style="display: none;">
+                        <button class="btn btn-primary" id="analyzeDocBtn">
+                            <span class="btn-icon"></span>
+                            Analyze FRD
+                        </button>
+                        <button class="btn btn-success" id="generateTestsBtn" style="display: none;">
+                            <span class="btn-icon"></span>
+                            Generate Test Cases
+                        </button>
+                    </div>
+
+                    <!-- BRD Document Actions -->
+                    <div id="brdActions" class="action-buttons" style="display: none;">
+                        <button class="btn btn-primary" id="convertBrdBtn">
+                            <span class="btn-icon"></span>
+                            Convert BRD to FRD
+                        </button>
+                        <button class="btn btn-info" id="analyzeFrdBtn" style="display: none;">
+                            <span class="btn-icon"></span>
+                            Analyze Converted FRD
+                        </button>
+                        <button class="btn btn-success" id="generateBrdTestsBtn" style="display: none;">
+                            <span class="btn-icon"></span>
+                            Generate Test Cases
+                        </button>
+                    </div>
+                </div>
+
+                <!-- BRD Flow Container - Will be populated by JavaScript -->
+                <div id="brdFlowContainer" class="flow-container" style="display: none;">
+                    <!-- BRD conversion and analysis steps will be inserted here -->
+                </div>
+
+                <!-- FRD Flow Container - Will be populated by JavaScript -->
+                <div id="frdFlowContainer" class="flow-container" style="display: none;">
+                    <!-- FRD analysis and test generation steps will be inserted here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="scripts/api.js"></script>
+    <script src="scripts/streaming.js"></script>
+    <script src="scripts/brd_streaming.js"></script>
+    <script src="scripts/text_formatter.js"></script>
+    <script src="scripts/main.js"></script>
+    <script src="scripts/frd_functionality.js"></script>
+    <script src="scripts/brd_functionality.js"></script>
+
+    <script>
+        // Document-specific UI handler
+        class DocumentUIHandler {
+            static updateDocumentActions(docType) {
+                const frdActions = document.getElementById('frdActions');
+                const brdActions = document.getElementById('brdActions');
+                const actionsTitle = document.getElementById('actionsTitle');
+                
+                // Hide all action groups first
+                frdActions.style.display = 'none';
+                brdActions.style.display = 'none';
+                
+                if (docType === 'FRD') {
+                    actionsTitle.textContent = 'FRD Actions';
+                    frdActions.style.display = 'flex';
+                    
+                    // Update the analyze button for FRD
+                    const analyzeBtn = document.getElementById('analyzeDocBtn');
+                    if (analyzeBtn) {
+                        analyzeBtn.innerHTML = '<span class="btn-icon"></span>Analyze FRD';
+                    }
+                    
+                } else if (docType === 'BRD') {
+                    actionsTitle.textContent = 'BRD Actions';
+                    brdActions.style.display = 'flex';
+                    
+                    // Set up BRD button event handlers
+                    this.setupBrdButtons();
+                }
+            }
+
+            static setupBrdButtons() {
+                const convertBtn = document.getElementById('convertBrdBtn');
+                const analyzeBtn = document.getElementById('analyzeFrdBtn');
+                const generateBtn = document.getElementById('generateBrdTestsBtn');
+
+                // Convert BRD to FRD button
+                if (convertBtn) {
+                    convertBtn.onclick = () => {
+                        if (window.brdFunctionality) {
+                            window.brdFunctionality.handleBrdToFrdConversion();
+                        }
+                    };
+                }
+
+                // Analyze converted FRD button
+                if (analyzeBtn) {
+                    analyzeBtn.onclick = () => {
+                        if (window.brdFunctionality) {
+                            window.brdFunctionality.handleAnalyzeConvertedFrd();
+                        }
+                    };
+                }
+
+                // Generate test cases button
+                if (generateBtn) {
+                    generateBtn.onclick = () => {
+                        if (window.brdFunctionality) {
+                            window.brdFunctionality.handleGenerateTestCases();
+                        }
+                    };
+                }
+            }
+
+            static showNextBrdStep(step) {
+                const analyzeBtn = document.getElementById('analyzeFrdBtn');
+                const generateBtn = document.getElementById('generateBrdTestsBtn');
+
+                switch(step) {
+                    case 'analyze':
+                        if (analyzeBtn) {
+                            analyzeBtn.style.display = 'inline-flex';
+                        }
+                        break;
+                    case 'generate':
+                        if (generateBtn) {
+                            generateBtn.style.display = 'inline-flex';
+                        }
+                        break;
+                }
+            }
+
+            static showNextFrdStep(step) {
+                const generateBtn = document.getElementById('generateTestsBtn');
+
+                if (step === 'generate' && generateBtn) {
+                    generateBtn.style.display = 'inline-flex';
+                }
+            }
+        }
+
+        // Make DocumentUIHandler globally available
+        window.DocumentUIHandler = DocumentUIHandler;
+
+        // Update the main app to use DocumentUIHandler
+        document.addEventListener('DOMContentLoaded', () => {
+            // Override the original openDocument method to include UI updates
+            if (window.app) {
+                const originalOpenDocument = window.app.openDocument.bind(window.app);
+                
+                window.app.openDocument = function(documentId, docType, fileName) {
+                    return originalOpenDocument(documentId, docType, fileName).then(() => {
+                        // Update UI based on document type
+                        DocumentUIHandler.updateDocumentActions(docType);
+                        
+                        // Show appropriate flow container
+                        const brdFlow = document.getElementById('brdFlowContainer');
+                        const frdFlow = document.getElementById('frdFlowContainer');
+                        
+                        if (docType === 'BRD') {
+                            brdFlow.style.display = 'block';
+                            frdFlow.style.display = 'none';
+                        } else if (docType === 'FRD') {
+                            frdFlow.style.display = 'block';
+                            brdFlow.style.display = 'none';
+                        }
+                    });
+                };
+            }
+        });
+    </script>
+</body>
+</html>
