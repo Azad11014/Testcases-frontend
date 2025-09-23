@@ -81,14 +81,14 @@ class ProjectManager {
     async selectProject(projectId) {
         try {
             this.currentProject = await ProjectAPI.getProject(projectId);
-            this.renderProjectDetails();
+            await this.renderProjectDetails();
             this.showStep(2);
         } catch (error) {
             this.showError(`Error: ${error.message}`);
         }
     }
 
-    renderProjectDetails() {
+    async renderProjectDetails() {
         document.getElementById('selectedProjectTitle').textContent = this.currentProject.name;
         document.getElementById('projectDescription').textContent = this.currentProject.description || 'No description';
 
@@ -99,20 +99,93 @@ class ProjectManager {
             return;
         }
 
-        documentsList.innerHTML = this.currentProject.documents.map(doc => {
+        // Load test cases for each document
+        const documentsWithTestCases = await Promise.all(
+            this.currentProject.documents.map(async (doc) => {
+                try {
+                    const testCases = await TestCaseAPI.listTestCases(this.currentProject.id, doc.id);
+                    return { ...doc, testCases: testCases || [] };
+                } catch (error) {
+                    return { ...doc, testCases: [] };
+                }
+            })
+        );
+
+        documentsList.innerHTML = documentsWithTestCases.map(doc => {
             const fileName = this.getFileName(doc.file_path);
             const uploadDate = doc.created_at ? new Date(doc.created_at).toLocaleString() : 'Unknown';
+            const sortedTestCases = doc.testCases.sort((a, b) => 
+                new Date(b.created_at || 0) - new Date(a.created_at || 0)
+            );
             
             return `
-                <div class="document-item" onclick="app.openDocument(${doc.id}, '${doc.doctype}', '${this.escapeHtml(fileName).replace(/'/g, "\\'")}')">
-                    <div class="document-info">
-                        <h4>${this.escapeHtml(fileName)}</h4>
-                        <p>Uploaded: ${uploadDate}</p>
+                <div class="document-card">
+                    <div class="document-item" onclick="app.openDocument(${doc.id}, '${doc.doctype}', '${this.escapeHtml(fileName).replace(/'/g, "\\'")}')">
+                        <div class="document-info">
+                            <h4>${this.escapeHtml(fileName)}</h4>
+                            <p>Uploaded: ${uploadDate}</p>
+                        </div>
+                        <span class="document-type ${doc.doctype}">${doc.doctype}</span>
                     </div>
-                    <span class="document-type ${doc.doctype}">${doc.doctype}</span>
+                    
+                    ${sortedTestCases.length > 0 ? `
+                        <div class="test-cases-section">
+                            <div class="test-cases-header" onclick="app.toggleTestCases(${doc.id})">
+                                <span>Test Cases (${sortedTestCases.length})</span>
+                                <span class="toggle-icon" id="toggle-${doc.id}">▶</span>
+                            </div>
+                            <div class="test-cases-list collapsed" id="testcases-${doc.id}">
+                                ${sortedTestCases.map(testCase => {
+                                    const createdDate = testCase.created_at ? new Date(testCase.created_at).toLocaleString() : 'Unknown';
+                                    const status = testCase.status || 'Generated';
+                                    
+                                    return `
+                                        <div class="test-case-item-mini" onclick="app.openTestCaseFromProject(${testCase.id}, ${doc.id}, '${doc.doctype}', '${this.escapeHtml(fileName).replace(/'/g, "\\'")}')">
+                                            <div class="test-case-mini-info">
+                                                <span class="test-case-title">TC #${testCase.id}</span>
+                                                <span class="test-case-date">${createdDate}</span>
+                                            </div>
+                                            <span class="test-case-status-mini ${status.toLowerCase()}">${status}</span>
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
                 </div>
             `;
         }).join('');
+    }
+
+    toggleTestCases(documentId) {
+        const testCasesList = document.getElementById(`testcases-${documentId}`);
+        const toggleIcon = document.getElementById(`toggle-${documentId}`);
+        
+        if (testCasesList.classList.contains('collapsed')) {
+            testCasesList.classList.remove('collapsed');
+            toggleIcon.textContent = '▼';
+        } else {
+            testCasesList.classList.add('collapsed');
+            toggleIcon.textContent = '▶';
+        }
+    }
+
+    async openTestCaseFromProject(testCaseId, documentId, docType, fileName) {
+        try {
+            // First load the document context
+            this.currentDocument = {
+                id: documentId,
+                doctype: docType,
+                filename: fileName,
+                projectId: this.currentProject.id
+            };
+
+            // Then open the test case
+            await this.openTestCase(testCaseId);
+            this.showStep(3);
+        } catch (error) {
+            this.showError(`Error opening test case: ${error.message}`);
+        }
     }
 
     async openDocument(documentId, docType, fileName) {
@@ -132,78 +205,11 @@ class ProjectManager {
             // Load document content
             const textData = await ProjectAPI.extractText(this.currentProject.id, documentId);
             this.renderDocumentContent(textData);
-            
-            // Load existing test cases for this document
-            await this.loadTestCases();
 
         } catch (error) {
             this.showError(`Error loading document: ${error.message}`);
             this.showStep(2);
         }
-    }
-
-    async loadTestCases() {
-        try {
-            this.testCases = await TestCaseAPI.listTestCases(this.currentProject.id, this.currentDocument.id);
-            this.renderTestCasesList();
-        } catch (error) {
-            console.log('No existing test cases found or error loading:', error.message);
-            this.testCases = [];
-            this.renderTestCasesList();
-        }
-    }
-
-    renderTestCasesList() {
-        // Create test cases section if it doesn't exist
-        let testCasesSection = document.getElementById('testCasesSection');
-        if (!testCasesSection) {
-            const documentActions = document.getElementById('documentActions');
-            const testCasesHTML = `
-                <div id="testCasesSection" class="section" style="display: block;">
-                    <div class="section-header">
-                        <h3>Existing Test Cases</h3>
-                        <span class="test-cases-count">0 test cases</span>
-                    </div>
-                    <div id="testCasesList" class="test-cases-list">
-                        <!-- Test cases will be loaded here -->
-                    </div>
-                </div>
-            `;
-            
-            // Insert before document actions
-            documentActions.insertAdjacentHTML('beforebegin', testCasesHTML);
-            testCasesSection = document.getElementById('testCasesSection');
-        }
-
-        const testCasesList = document.getElementById('testCasesList');
-        const testCasesCount = document.querySelector('.test-cases-count');
-        
-        if (!this.testCases.length) {
-            testCasesList.innerHTML = '<div class="loading">No test cases found. Generate test cases using the actions below.</div>';
-            testCasesCount.textContent = '0 test cases';
-            return;
-        }
-
-        testCasesCount.textContent = `${this.testCases.length} test case${this.testCases.length !== 1 ? 's' : ''}`;
-
-        testCasesList.innerHTML = this.testCases.map(testCase => {
-            const createdDate = testCase.created_at ? new Date(testCase.created_at).toLocaleString() : 'Unknown';
-            const status = testCase.status || 'Generated';
-            
-            return `
-                <div class="test-case-item" onclick="app.openTestCase(${testCase.id})">
-                    <div class="test-case-info">
-                        <h4>Test Case #${testCase.id}</h4>
-                        <p>Created: ${createdDate}</p>
-                        <p class="test-case-description">${this.escapeHtml(testCase.description || 'Test case for document analysis')}</p>
-                    </div>
-                    <div class="test-case-meta">
-                        <span class="test-case-status ${status.toLowerCase()}">${status}</span>
-                        <span class="test-case-count">${testCase.total_tests || 0} tests</span>
-                    </div>
-                </div>
-            `;
-        }).join('');
     }
 
     async openTestCase(testCaseId) {
@@ -219,9 +225,8 @@ class ProjectManager {
             typeHeader.textContent = 'TEST CASE';
             typeHeader.className = 'document-type TESTCASE';
 
-            // Hide document actions and test cases list
+            // Hide document actions
             document.getElementById('documentActions').style.display = 'none';
-            document.getElementById('testCasesSection').style.display = 'none';
             
             // Hide flow containers
             const brdFlow = document.getElementById('brdFlowContainer');
@@ -446,7 +451,6 @@ class ProjectManager {
 
         // Show document sections
         document.getElementById('documentActions').style.display = 'block';
-        document.getElementById('testCasesSection').style.display = 'block';
         
         // Show appropriate flow container
         const brdFlow = document.getElementById('brdFlowContainer');
