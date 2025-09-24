@@ -454,7 +454,7 @@ class FRDFunctionality {
                 </div>
                 <div class="stream-actions" style="display: none;">
                     <button id="downloadTestVersion${versionId}" class="btn btn-success btn-sm">
-                        <span class="btn-icon">📥</span>
+                        <span class="btn-icon">Download</span>
                         Download Test Cases V${versionId}
                     </button>
                 </div>
@@ -522,7 +522,7 @@ class FRDFunctionality {
                 </div>
                 <div class="stream-actions">
                     <button id="downloadTestVersion${versionId}" class="btn btn-success btn-sm">
-                        <span class="btn-icon">📥</span>
+                        <span class="btn-icon">Download</span>
                         Download Test Cases V${versionId}
                     </button>
                 </div>
@@ -563,6 +563,17 @@ class FRDFunctionality {
                 const result = await FRDAPI.sendChatMessageFallback(projectId, documentId, message);
                 const responseText = result.response || result.content || result.text || result.message || 'Updated successfully';
                 this.updateChatResponse(versionId, responseText, false);
+                
+                // For fallback, still create new test version with the response
+                const newTestVersion = Math.max(...Array.from(this.testVersions.keys())) + 1;
+                this.currentTestVersion = newTestVersion;
+                this.testVersions.set(newTestVersion, {
+                    content: responseText,
+                    timestamp: new Date().toISOString(),
+                    downloaded: false,
+                    basedOnChat: versionId
+                });
+                this.displayTestVersion(newTestVersion);
             }
 
         } catch (error) {
@@ -612,7 +623,7 @@ class FRDFunctionality {
         let accumulatedContent = '';
 
         try {
-            await StreamingService.streamChatUpdate(projectId, documentId, message, (chunk) => {
+            await this.streamTestCaseUpdate(projectId, documentId, message, (chunk) => {
                 if (chunk.text) {
                     accumulatedContent += chunk.text;
                     this.updateChatResponse(versionId, accumulatedContent, true);
@@ -627,15 +638,60 @@ class FRDFunctionality {
         }
     }
 
+    async streamTestCaseUpdate(projectId, documentId, message, onChunk) {
+        const url = `${API_BASE}/api/v1/project/${projectId}/frd/${documentId}/testcases/update/stream`;
+        
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'text/event-stream'
+            },
+            body: JSON.stringify({ message: message })
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        try {
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value, { stream: true });
+                const lines = chunk.split('\n');
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+                            if (data && onChunk) {
+                                onChunk(data);
+                            }
+                        } catch (e) {
+                            // Skip invalid JSON lines
+                        }
+                    }
+                }
+            }
+        } finally {
+            reader.releaseLock();
+        }
+    }
+
     async generateUpdatedTestCases(projectId, documentId, chatResponse, chatVersion) {
         try {
+            // The chatResponse already contains the updated test cases from the streaming API
             // Generate new test cases version based on chat interaction
             const newTestVersion = Math.max(...Array.from(this.testVersions.keys())) + 1;
             this.currentTestVersion = newTestVersion;
 
-            // Call API to get updated test cases
-            const result = await FRDAPI.generateTestCasesFallback(projectId, documentId);
-            const testContent = result?.test_cases || result?.content || result?.text || 'Updated test cases';
+            // Use the streamed content as the new test cases
+            const testContent = chatResponse || 'Updated test cases';
 
             // Store new test version
             this.testVersions.set(newTestVersion, {
@@ -679,11 +735,11 @@ class FRDFunctionality {
         const versionData = this.testVersions.get(versionId);
         
         if (versionData) {
-            this.downloadTestCasesAsDocx(versionData.content, versionId);
+            this.downloadTestCasesAsTxt(versionData.content, versionId);
             
             // Update button state
             versionData.downloaded = true;
-            button.innerHTML = '<span class="btn-icon">✅</span>Downloaded';
+            button.innerHTML = '<span class="btn-icon">✓</span>Downloaded';
             button.disabled = true;
             button.classList.remove('btn-success');
             button.classList.add('btn-secondary');
@@ -692,18 +748,16 @@ class FRDFunctionality {
         }
     }
 
-    async downloadTestCasesAsDocx(content, version) {
+    downloadTestCasesAsTxt(content, version) {
         try {
             const { projectName, documentName } = this.getDocInfo();
-            const filename = `${projectName}_${documentName}_testcase${version}.docx`;
+            const filename = `${projectName}_${documentName}_testcase${version}.txt`;
             
-            // Create a simple docx structure
-            const docxContent = this.createDocxContent(content, projectName, documentName, version);
+            // Create text content with header
+            const txtContent = this.createTxtContent(content, projectName, documentName, version);
             
             // Create blob and download
-            const blob = new Blob([docxContent], { 
-                type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' 
-            });
+            const blob = new Blob([txtContent], { type: 'text/plain' });
             
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -720,61 +774,25 @@ class FRDFunctionality {
         }
     }
 
-    createDocxContent(testContent, projectName, documentName, version) {
-        // Create a basic XML structure for a Word document
-        const timestamp = new Date().toISOString().split('T')[0];
+    createTxtContent(testContent, projectName, documentName, version) {
+        const timestamp = new Date().toLocaleString();
         
-        const xmlContent = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-    <w:body>
-        <w:p>
-            <w:pPr>
-                <w:pStyle w:val="Title"/>
-            </w:pPr>
-            <w:r>
-                <w:t>Test Cases - ${projectName}</w:t>
-            </w:r>
-        </w:p>
-        <w:p>
-            <w:pPr>
-                <w:pStyle w:val="Subtitle"/>
-            </w:pPr>
-            <w:r>
-                <w:t>Document: ${documentName}</w:t>
-            </w:r>
-        </w:p>
-        <w:p>
-            <w:r>
-                <w:t>Version: ${version}</w:t>
-            </w:r>
-        </w:p>
-        <w:p>
-            <w:r>
-                <w:t>Generated: ${timestamp}</w:t>
-            </w:r>
-        </w:p>
-        <w:p>
-            <w:r>
-                <w:t></w:t>
-            </w:r>
-        </w:p>
-        <w:p>
-            <w:pPr>
-                <w:pStyle w:val="Heading1"/>
-            </w:pPr>
-            <w:r>
-                <w:t>Test Cases Content</w:t>
-            </w:r>
-        </w:p>
-        <w:p>
-            <w:r>
-                <w:t>${this.escapeXml(testContent)}</w:t>
-            </w:r>
-        </w:p>
-    </w:body>
-</w:document>`;
+        const txtContent = `TEST CASES
+===========
 
-        return xmlContent;
+Project: ${projectName}
+Document: ${documentName}
+Version: ${version}
+Generated: ${timestamp}
+
+${'='.repeat(50)}
+
+${testContent}
+
+${'='.repeat(50)}
+End of Test Cases Document`;
+
+        return txtContent;
     }
 
     handleVersionNavigation(button) {
@@ -845,7 +863,7 @@ class FRDFunctionality {
                 </div>
                 <div class="stream-actions">
                     <button id="downloadTestVersion${versionId}" class="btn ${versionData.downloaded ? 'btn-secondary' : 'btn-success'} btn-sm" ${versionData.downloaded ? 'disabled' : ''}>
-                        <span class="btn-icon">${versionData.downloaded ? '✅' : '📥'}</span>
+                        <span class="btn-icon">${versionData.downloaded ? '✓' : 'Download'}</span>
                         ${versionData.downloaded ? 'Downloaded' : `Download Test Cases V${versionId}`}
                     </button>
                 </div>
