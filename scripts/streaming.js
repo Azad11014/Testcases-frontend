@@ -1,4 +1,4 @@
-// Streaming Service with Server-Sent Events - Fixed for actual API endpoints
+// Enhanced Streaming Service with FRD-specific endpoints and proper fallbacks
 class StreamingService {
     static activeStreams = new Map();
 
@@ -86,20 +86,7 @@ class StreamingService {
         this.activeStreams.clear();
     }
 
-    // FRD Analysis Stream - Fixed endpoint
-    static async streamAnalysis(projectId, documentId, onChunk) {
-        const streamId = `analysis-${projectId}-${documentId}`;
-        const url = `${API_BASE}/api/v1/project/${projectId}/frd/${documentId}/analyze/stream`;
-        
-        try {
-            return await this.stream(url, streamId, onChunk);
-        } catch (error) {
-            console.warn('Analysis streaming failed:', error);
-            throw error;
-        }
-    }
-
-    // Test Case Generation Stream - Fixed endpoint
+    // FRD Test Case Generation Stream
     static async streamTestGeneration(projectId, documentId, onChunk) {
         const streamId = `testgen-${projectId}-${documentId}`;
         const url = `${API_BASE}/api/v1/project/${projectId}/frd/${documentId}/testcases/generate/stream`;
@@ -112,12 +99,11 @@ class StreamingService {
         }
     }
 
-    // Chat Update Stream - Fixed endpoint and method
+    // FRD Chat Update Stream - Uses POST with streaming response
     static async streamChatUpdate(projectId, documentId, message, onChunk) {
         const streamId = `chat-${projectId}-${documentId}`;
         
         try {
-            // First send the message via POST, then stream the response
             const postUrl = `${API_BASE}/api/v1/project/${projectId}/frd/${documentId}/testcases/update/stream`;
             
             // Use fetch for POST request that returns a stream
@@ -200,9 +186,15 @@ class StreamingService {
             }
         });
     }
+
+    // Legacy methods for backward compatibility
+    static async streamAnalysis(projectId, documentId, onChunk) {
+        console.warn('streamAnalysis is deprecated, analysis does not support streaming');
+        throw new Error('Analysis streaming not supported');
+    }
 }
 
-// Text Formatter
+// Text Formatter for proper content display
 class TextFormatter {
     static formatText(text) {
         if (!text) return '';
