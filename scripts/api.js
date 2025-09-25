@@ -75,11 +75,114 @@ class TestCaseAPI {
         return API.get(`/api/v1/testcases/${testcaseId}/preview`);
     }
     
-    // Update test case via chat
-    static updateTestCaseChat(testcaseId, message) {
-        return API.post(`/api/v1/testcases/${testcaseId}/chat`, { message });
+    // Update test case via chat with streaming support
+    static async updateTestCaseChat(testcaseId, message, onChunk) {
+        const url = `${API_BASE}/api/v1/testcases/${testcaseId}/chat`;
+        
+        try {
+            // Try streaming first
+            return await this.streamTestCaseChat(testcaseId, message, onChunk);
+        } catch (streamError) {
+            console.warn('Streaming failed for test case chat, using fallback:', streamError);
+            // Fallback to regular API (though this API seems to be streaming-only)
+            return API.post(url, { message });
+        }
     }
     
+    // Stream test case chat updates
+    static async streamTestCaseChat(testcaseId, message, onChunk) {
+        const url = `${API_BASE}/api/v1/testcases/${testcaseId}/chat`;
+        
+        return new Promise(async (resolve, reject) => {
+            let accumulatedText = '';
+            let isComplete = false;
+            
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'text/event-stream',
+                        'Cache-Control': 'no-cache'
+                    },
+                    body: JSON.stringify({ message })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    
+                    if (done) {
+                        isComplete = true;
+                        resolve({
+                            response: accumulatedText,
+                            content: accumulatedText,
+                            message: accumulatedText
+                        });
+                        break;
+                    }
+
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const dataStr = line.slice(6).trim();
+                            
+                            if (dataStr === '[DONE]') {
+                                isComplete = true;
+                                resolve({
+                                    response: accumulatedText,
+                                    content: accumulatedText,
+                                    message: accumulatedText
+                                });
+                                return;
+                            }
+
+                            try {
+                                const data = JSON.parse(dataStr);
+                                
+                                if (data.type === 'token' && data.text) {
+                                    accumulatedText += data.text;
+                                    
+                                    if (onChunk) {
+                                        onChunk({
+                                            text: data.text,
+                                            data: data,
+                                            accumulated: accumulatedText
+                                        });
+                                    }
+                                }
+                            } catch (parseError) {
+                                // Handle non-JSON data
+                                if (dataStr.trim()) {
+                                    accumulatedText += dataStr;
+                                    if (onChunk) {
+                                        onChunk({
+                                            text: dataStr,
+                                            accumulated: accumulatedText
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Stream error:', error);
+                if (!isComplete) {
+                    reject(error);
+                }
+            }
+        });
+    }
+
     // Generate test cases with streaming support
     static generateTestCasesStream(projectId, documentId) {
         return StreamingService.streamTestGeneration(projectId, documentId);

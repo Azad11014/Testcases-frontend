@@ -1,4 +1,4 @@
-// Main Application with Test Case Management
+// Main Application with Test Case Management and Streaming Support
 class ProjectManager {
     constructor() {
         this.currentProject = null;
@@ -390,19 +390,44 @@ class ProjectManager {
             // Add user message to chat
             this.addTestCaseChatMessage(message, 'user');
 
-            // Send update request to API
-            const result = await TestCaseAPI.updateTestCaseChat(this.currentTestCase.id, message);
-            
-            // Add AI response to chat
-            const responseText = result.response || result.content || result.message || 'Test case updated successfully';
-            this.addTestCaseChatMessage(responseText, 'ai');
+            // Create a streaming response container
+            const streamingMessageId = 'streaming-' + Date.now();
+            this.addTestCaseChatMessage('', 'ai', streamingMessageId);
+            const streamingContainer = document.querySelector(`#${streamingMessageId} .message-content`);
+
+            let accumulatedResponse = '';
+
+            // Send update request to API with streaming
+            const result = await TestCaseAPI.updateTestCaseChat(
+                this.currentTestCase.id, 
+                message, 
+                (chunk) => {
+                    // Handle streaming chunks
+                    if (chunk.text) {
+                        accumulatedResponse += chunk.text;
+                        if (streamingContainer) {
+                            streamingContainer.innerHTML = this.escapeHtml(accumulatedResponse);
+                        }
+                    }
+                    
+                    // Auto-scroll to bottom
+                    const container = document.getElementById('testCaseChatResponses');
+                    if (container) {
+                        container.scrollTop = container.scrollHeight;
+                    }
+                }
+            );
 
             // Clear input
             input.value = '';
 
-            // Reload test case content to show updates
-            const updatedTestCase = await TestCaseAPI.previewTestCase(this.currentTestCase.id);
-            this.renderTestCaseContent(updatedTestCase);
+            // Reload test case content to show updates after streaming is complete
+            try {
+                const updatedTestCase = await TestCaseAPI.previewTestCase(this.currentTestCase.id);
+                this.renderTestCaseContent(updatedTestCase);
+            } catch (reloadError) {
+                console.warn('Could not reload test case content:', reloadError);
+            }
 
         } catch (error) {
             console.error('Test case chat error:', error);
@@ -414,7 +439,7 @@ class ProjectManager {
         }
     }
 
-    addTestCaseChatMessage(message, type) {
+    addTestCaseChatMessage(message, type, messageId = null) {
         const container = document.getElementById('testCaseChatResponses');
         if (!container) return;
 
@@ -424,8 +449,10 @@ class ProjectManager {
         const icon = type === 'user' ? 'User:' : 
                     type === 'error' ? 'Error:' : 'AI:';
 
+        const id = messageId || ('message-' + Date.now());
+
         const messageHTML = `
-            <div class="inline-response">
+            <div class="inline-response" id="${id}">
                 <div class="${messageClass}">
                     <div class="query-icon">${icon}</div>
                     <div class="message-content">${this.escapeHtml(message)}</div>
