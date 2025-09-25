@@ -928,7 +928,7 @@ End of Test Cases Document`;
             container.insertAdjacentHTML('beforeend', `
                 <div class="chat-exchange error">
                     <div class="error-message">
-                        <span class="error-icon">⚠️</span>
+                        <span class="error-icon"></span>
                         Error: ${this.escapeHtml(message)}
                     </div>
                 </div>

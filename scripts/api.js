@@ -178,45 +178,430 @@ class FRDAPI {
 
 // BRD API - Updated with correct endpoints
 class BRDAPI {
-    // BRD Non-Streaming APIs
+    static API_BASE = API_BASE || '';
+
+    // BRD Non-Streaming APIs (Fallback)
     
-    // Convert BRD to FRD
+    // Convert BRD to FRD - Keep existing endpoint
     static async convertBrdToFrd(projectId, documentId) {
-        return API.post(`/api/v1/project/${projectId}/document/${documentId}/convert`);
+        try {
+            return await API.post(`/api/v1/project/${projectId}/document/${documentId}/convert`);
+        } catch (error) {
+            console.error('BRD to FRD conversion failed:', error);
+            throw error;
+        }
     }
 
-    // Analyze BRD FRD
+    // Analyze BRD FRD - Updated endpoint
     static async analyzeBrdFrd(projectId, documentId) {
-        return API.post(`/api/v1/project/${projectId}/document/${documentId}/bfrd/analyze`);
+        try {
+            return await API.post(`/api/v1/project/${projectId}/document/${documentId}/bfrd/analyze`);
+        } catch (error) {
+            console.error('BRD FRD analysis failed:', error);
+            throw error;
+        }
     }
 
-    // Generate Test Cases
+    // Propose Fix BRD - New endpoint
+    static async proposeBrdFix(projectId, documentId, issueIds) {
+        try {
+            const payload = {
+                issues: Array.isArray(issueIds) ? issueIds : [issueIds],
+                message: `Please propose fixes for the following issues: ${issueIds.join(', ')}`
+            };
+            return await API.post(`/api/v1/project/${projectId}/document/${documentId}/brd/propose-fix`, payload);
+        } catch (error) {
+            console.error('BRD propose fix failed:', error);
+            throw error;
+        }
+    }
+
+    // Apply Fix BRD - New endpoint with version
+    static async applyBrdFix(projectId, documentId, versionId = 0) {
+        try {
+            return await API.post(`/api/v1/project/${projectId}/document/${documentId}/brd/apply-fix/${versionId}`);
+        } catch (error) {
+            console.error('BRD apply fix failed:', error);
+            throw error;
+        }
+    }
+
+    // Generate Test Cases - New endpoint
     static async generateTestCases(projectId, documentId) {
-        return API.post(`/api/v1/project/${projectId}/document/${documentId}/testcases/generate`);
+        try {
+            return await API.post(`/api/v1/project/${projectId}/document/${documentId}/testcases/generate`);
+        } catch (error) {
+            console.error('BRD generate test cases failed:', error);
+            throw error;
+        }
     }
-    
-    // Update Test Cases
+
+    // Update Test Cases - New endpoint
     static async updateTestCases(projectId, documentId, message) {
-        return API.post(`/api/v1/project/${projectId}/document/${documentId}/testcases/update`, { message });
+        try {
+            const payload = {
+                message: message,
+                instruction: message
+            };
+            return await API.post(`/api/v1/project/${projectId}/document/${documentId}/testcases/update`, payload);
+        } catch (error) {
+            console.error('BRD update test cases failed:', error);
+            throw error;
+        }
     }
 
-    // Legacy method names for backward compatibility
-    static async converBrdToFrd(projectId, documentId) {
-        return this.convertBrdToFrd(projectId, documentId);
-    }
-
-    static async analyzeBFRD(projectId, documentId) {
-        return this.analyzeBrdFrd(projectId, documentId);
-    }
-
-    static async generateBFRDTestCases(projectId, documentId) {
-        return this.generateTestCases(projectId, documentId);
-    }
+    // Streaming APIs with fallback logic
     
-    static async chatUpdateBFRDTestCases(projectId, documentId, message) {
-        return this.updateTestCases(projectId, documentId, message);
+    // Stream BRD to FRD conversion
+    static async streamBrdToFrd(projectId, brdId, onChunk, onComplete, onError) {
+        console.log(`Starting BRD to FRD streaming for project ${projectId}, brd ${brdId}`);
+        
+        try {
+            // Try streaming first
+            return await BRDStreamingService.streamBrdToFrd(projectId, brdId, onChunk, onComplete, onError);
+        } catch (streamError) {
+            console.warn('BRD to FRD streaming failed, trying fallback API:', streamError);
+            
+            try {
+                // Fallback to regular API
+                const result = await this.convertBrdToFrd(projectId, brdId);
+                
+                // Simulate streaming behavior for consistency
+                if (onChunk && result) {
+                    const content = this.extractContent(result);
+                    onChunk({ text: content, data: result });
+                }
+                
+                if (onComplete && result) {
+                    const content = this.extractContent(result);
+                    onComplete(content);
+                }
+                
+                return result;
+            } catch (fallbackError) {
+                console.error('Both streaming and fallback failed for BRD to FRD:', fallbackError);
+                if (onError) onError(fallbackError);
+                throw fallbackError;
+            }
+        }
+    }
+
+    // Stream BRD FRD analysis
+    static async streamAnalyzeBrdFrd(projectId, brdId, onChunk, onComplete, onError) {
+        console.log(`Starting BRD FRD analysis streaming for project ${projectId}, brd ${brdId}`);
+        
+        try {
+            // Try streaming first
+            return await BRDStreamingService.streamAnalyzeBrdFrd(projectId, brdId, onChunk, onComplete, onError);
+        } catch (streamError) {
+            console.warn('BRD FRD analysis streaming failed, trying fallback API:', streamError);
+            
+            try {
+                // Fallback to regular API
+                const result = await this.analyzeBrdFrd(projectId, brdId);
+                
+                // Simulate streaming behavior
+                if (onChunk && result) {
+                    const content = this.extractContent(result);
+                    onChunk({ text: content, data: result });
+                }
+                
+                if (onComplete && result) {
+                    const content = this.extractContent(result);
+                    onComplete(content);
+                }
+                
+                return result;
+            } catch (fallbackError) {
+                console.error('Both streaming and fallback failed for BRD FRD analysis:', fallbackError);
+                if (onError) onError(fallbackError);
+                throw fallbackError;
+            }
+        }
+    }
+
+    // Stream propose fix
+    static async streamProposeFix(projectId, brdId, message, onChunk) {
+        console.log(`Starting BRD propose fix streaming for project ${projectId}, brd ${brdId}`);
+        
+        try {
+            // Try streaming first
+            return await BRDStreamingService.streamProposeFix(projectId, brdId, message, onChunk);
+        } catch (streamError) {
+            console.warn('BRD propose fix streaming failed, trying fallback API:', streamError);
+            
+            try {
+                // Extract issue IDs from message or use default
+                const issueIds = this.extractIssueIds(message) || [1];
+                
+                // Fallback to regular API
+                const result = await this.proposeBrdFix(projectId, brdId, issueIds);
+                
+                // Simulate streaming behavior
+                if (onChunk && result) {
+                    const content = this.extractContent(result);
+                    onChunk({ text: content, data: result });
+                }
+                
+                return result;
+            } catch (fallbackError) {
+                console.error('Both streaming and fallback failed for BRD propose fix:', fallbackError);
+                throw fallbackError;
+            }
+        }
+    }
+
+    // Stream test case generation
+    static async streamTestGeneration(projectId, brdId, onChunk) {
+        console.log(`Starting BRD test generation streaming for project ${projectId}, brd ${brdId}`);
+        
+        try {
+            // Try streaming first
+            return await BRDStreamingService.streamTestGeneration(projectId, brdId, onChunk);
+        } catch (streamError) {
+            console.warn('BRD test generation streaming failed, trying fallback API:', streamError);
+            
+            try {
+                // Fallback to regular API
+                const result = await this.generateTestCases(projectId, brdId);
+                
+                // Simulate streaming behavior
+                if (onChunk && result) {
+                    const content = this.extractContent(result);
+                    onChunk({ text: content, data: result });
+                }
+                
+                return result;
+            } catch (fallbackError) {
+                console.error('Both streaming and fallback failed for BRD test generation:', fallbackError);
+                throw fallbackError;
+            }
+        }
+    }
+
+    // Stream test case update
+    static async streamTestUpdate(projectId, brdId, message, onChunk) {
+        console.log(`Starting BRD test update streaming for project ${projectId}, brd ${brdId}`);
+        
+        try {
+            // Try streaming first
+            return await BRDStreamingService.streamTestUpdate(projectId, brdId, message, onChunk);
+        } catch (streamError) {
+            console.warn('BRD test update streaming failed, trying fallback API:', streamError);
+            
+            try {
+                // Fallback to regular API
+                const result = await this.updateTestCases(projectId, brdId, message);
+                
+                // Simulate streaming behavior
+                if (onChunk && result) {
+                    const content = this.extractContent(result);
+                    onChunk({ text: content, data: result });
+                }
+                
+                return result;
+            } catch (fallbackError) {
+                console.error('Both streaming and fallback failed for BRD test update:', fallbackError);
+                throw fallbackError;
+            }
+        }
+    }
+
+    // Utility Methods
+
+    // Extract content from API response
+    static extractContent(result) {
+        if (typeof result === 'string') return result;
+        
+        if (typeof result === 'object' && result !== null) {
+            // Try various common content fields
+            return result.frd_content || 
+                   result.analysis || 
+                   result.test_cases || 
+                   result.content || 
+                   result.text || 
+                   result.message || 
+                   result.response ||
+                   result.converted_content || 
+                   result.conversion_result ||
+                   result.proposed_fixes ||
+                   result.fix_suggestions ||
+                   result.applied_fixes ||
+                   result.updated_content ||
+                   result.generated_tests ||
+                   result.test_content ||
+                   JSON.stringify(result, null, 2);
+        }
+        
+        return 'No content available';
+    }
+
+    // Extract issue IDs from message text
+    static extractIssueIds(message) {
+        if (!message) return null;
+        
+        // Look for patterns like "issues: 1, 2, 3" or "issue #1, #2"
+        const matches = message.match(/(?:issue|issues)[:\s#]*(\d+(?:,?\s*\d+)*)/i);
+        
+        if (matches && matches[1]) {
+            return matches[1].split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+        }
+        
+        // Look for standalone numbers
+        const numberMatches = message.match(/\b\d+\b/g);
+        if (numberMatches) {
+            return numberMatches.map(id => parseInt(id)).filter(id => !isNaN(id) && id > 0);
+        }
+        
+        return null;
+    }
+
+    // Check if streaming is available
+    static async isStreamingAvailable(projectId, brdId) {
+        try {
+            return await BRDStreamingService.testStreamingAvailability(projectId, brdId);
+        } catch (error) {
+            console.warn('Streaming availability check failed:', error);
+            return false;
+        }
+    }
+
+    // Get streaming service status
+    static getStreamingStatus() {
+        return {
+            supported: BRDStreamingService.isStreamingSupported(),
+            activeStreams: BRDStreamingService.getActiveStreamCount(),
+            streamIds: BRDStreamingService.getActiveStreamIds()
+        };
+    }
+
+    // Enhanced error handling with retry logic
+    static async executeWithRetry(operation, maxRetries = 2, delay = 1000) {
+        let lastError;
+        
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                console.log(`API attempt ${attempt + 1}/${maxRetries + 1}`);
+                return await operation();
+            } catch (error) {
+                lastError = error;
+                console.warn(`API attempt ${attempt + 1} failed:`, error.message);
+                
+                if (attempt < maxRetries) {
+                    // Wait before retry (exponential backoff)
+                    const waitTime = delay * Math.pow(2, attempt);
+                    console.log(`Retrying in ${waitTime}ms...`);
+                    await new Promise(resolve => setTimeout(resolve, waitTime));
+                } else {
+                    console.error(`All ${maxRetries + 1} API attempts failed`);
+                    throw lastError;
+                }
+            }
+        }
+    }
+
+    // Validate API parameters
+    static validateParams(projectId, documentId) {
+        if (!projectId || !documentId) {
+            throw new Error('Project ID and Document ID are required');
+        }
+        
+        if (typeof projectId !== 'string' && typeof projectId !== 'number') {
+            throw new Error('Project ID must be a string or number');
+        }
+        
+        if (typeof documentId !== 'string' && typeof documentId !== 'number') {
+            throw new Error('Document ID must be a string or number');
+        }
+    }
+
+    // Format error for user display
+    static formatError(error) {
+        if (error?.response?.data?.message) {
+            return error.response.data.message;
+        }
+        
+        if (error?.message) {
+            return error.message;
+        }
+        
+        if (typeof error === 'string') {
+            return error;
+        }
+        
+        return 'An unknown error occurred';
+    }
+
+    // Health check endpoint
+    static async healthCheck() {
+        try {
+            // This would depend on your API having a health check endpoint
+            const response = await fetch(`${this.API_BASE}/health`);
+            return response.ok;
+        } catch (error) {
+            console.warn('Health check failed:', error);
+            return false;
+        }
+    }
+
+    // Get API configuration
+    static getConfig() {
+        return {
+            baseUrl: this.API_BASE,
+            streamingSupported: BRDStreamingService.isStreamingSupported(),
+            endpoints: {
+                convert: '/api/v1/project/{project_id}/document/{document_id}/convert',
+                analyze: '/api/v1/project/{project_id}/document/{document_id}/bfrd/analyze',
+                proposeFix: '/api/v1/project/{project_id}/document/{document_id}/brd/propose-fix',
+                applyFix: '/api/v1/project/{project_id}/document/{document_id}/brd/apply-fix/{version_id}',
+                generateTests: '/api/v1/project/{project_id}/document/{document_id}/testcases/generate',
+                updateTests: '/api/v1/project/{project_id}/document/{document_id}/testcases/update',
+                
+                // Streaming endpoints
+                streamConvert: '/api/v1/project/{project_id}/brd/{brd_id}/frd/stream',
+                streamAnalyze: '/api/v1/project/{project_id}/brd/{brd_id}/analyze/stream',
+                streamProposeFix: '/api/v1/project/{project_id}/brd/{brd_id}/propose-fix/stream',
+                streamGenerateTests: '/api/v1/project/{project_id}/brd/{brd_id}/testcases/generate/stream',
+                streamUpdateTests: '/api/v1/project/{project_id}/brd/{brd_id}/testcases/update/stream'
+            }
+        };
+    }
+
+    // Close all active streams
+    static closeAllStreams() {
+        if (BRDStreamingService) {
+            BRDStreamingService.closeAllStreams();
+        }
+    }
+
+    // Debug logging
+    static enableDebugLogging(enable = true) {
+        this._debugLogging = enable;
+        if (enable) {
+            console.log('BRD API debug logging enabled');
+            console.log('Current configuration:', this.getConfig());
+        }
+    }
+
+    static _log(...args) {
+        if (this._debugLogging) {
+            console.log('[BRD API]', ...args);
+        }
     }
 }
+
+// Make globally available
+window.BRDAPI = BRDAPI;
+
+// Initialize debug logging if needed
+if (window.location.hostname === 'localhost' || window.location.search.includes('debug=1')) {
+    BRDAPI.enableDebugLogging(true);
+}
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', () => {
+    BRDAPI.closeAllStreams();
+});
 
 // Enhanced error handling and retry logic
 class APIWithRetry {
