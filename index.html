@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BRD-FRD Document Manager</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>BRD-FRD Document Manager</h1>
+        </header>
+
+        <div class="main-content">
+            <!-- Step 1: Project Selection -->
+            <div id="step1" class="step active">
+                <div class="section">
+                    <div class="section-header">
+                        <h2>Select a Project</h2>
+                        <button id="createProjectBtn" class="btn btn-primary">Create New Project</button>
+                    </div>
+                    
+                    <div id="projectsList" class="projects-list">
+                        <div class="loading">Loading projects...</div>
+                    </div>
+                </div>
+
+                <!-- Create Project Modal -->
+                <div id="createProjectModal" class="modal">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>Create New Project</h3>
+                            <span class="close">&times;</span>
+                        </div>
+                        <form id="createProjectForm">
+                            <div class="form-group">
+                                <label for="projectName">Project Name</label>
+                                <input type="text" id="projectName" name="name" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="projectDescription">Description</label>
+                                <textarea id="projectDescription" name="description" rows="3"></textarea>
+                            </div>
+                            <div class="form-actions">
+                                <button type="button" class="btn btn-secondary" id="cancelCreate">Cancel</button>
+                                <button type="submit" class="btn btn-primary">Create Project</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 2: Project Details -->
+            <div id="step2" class="step">
+                <div class="section">
+                    <div class="section-header">
+                        <h2 id="selectedProjectTitle">Project Details</h2>
+                        <button id="backToProjects" class="btn btn-secondary">Back to Projects</button>
+                    </div>
+                    
+                    <div class="project-info">
+                        <div class="info-card">
+                            <h3>Project Information</h3>
+                            <p id="projectDescription"></p>
+                        </div>
+                        
+                        <div class="documents-section">
+                            <div class="section-header">
+                                <h3>Documents</h3>
+                                <button id="uploadDocBtn" class="btn btn-primary">Upload Document</button>
+                            </div>
+                            <div id="documentsList" class="documents-list">
+                                <!-- Documents will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Upload Document Modal -->
+                <div id="uploadDocModal" class="modal">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>Upload Document</h3>
+                            <span class="close">&times;</span>
+                        </div>
+                        <form id="uploadDocForm">
+                            <div class="form-group">
+                                <label for="docFile">Select File</label>
+                                <input type="file" id="docFile" name="file" accept=".pdf,.doc,.docx,.txt" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="docType">Document Type</label>
+                                <select id="docType" name="doctype" required>
+                                    <option value="">Select document type</option>
+                                    <option value="BRD">BRD (Business Requirements Document)</option>
+                                    <option value="FRD">FRD (Functional Requirements Document)</option>
+                                </select>
+                            </div>
+                            <div class="form-actions">
+                                <button type="button" class="btn btn-secondary" id="cancelUpload">Cancel</button>
+                                <button type="submit" class="btn btn-primary">Upload</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 3: Document Viewer -->
+            <div id="step3" class="step">
+                <div class="section">
+                    <div class="section-header">
+                        <div>
+                            <h2 id="documentTitle">Document Content</h2>
+                            <p id="documentMeta" class="document-subtitle"></p>
+                        </div>
+                        <div class="header-actions">
+                            <span id="documentTypeHeader" class="document-type-large"></span>
+                            <button id="backToProject" class="btn btn-secondary">Back to Project</button>
+                        </div>
+                    </div>
+                    
+                    <div id="documentContent" class="document-content">
+                        <div class="loading">Loading document content...</div>
+                    </div>
+                </div>
+
+                <!-- Testcases Section -->
+                <div class="section">
+                    <div id="testcaseSection">
+                        <div class="loading">Loading testcases...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/api.js"></script>
+    <script src="js/app.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>
