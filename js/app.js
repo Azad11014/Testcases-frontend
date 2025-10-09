@@ -1,4 +1,4 @@
-// app.js - Application State and Core Logic
+// app.js - Application State and Core Logic (COMPLETE WITH BRD CHILDREN)
 class App {
     constructor() {
         this.currentProject = null;
@@ -7,23 +7,21 @@ class App {
         this.documents = [];
         this.currentStep = 1;
         
-        // Cache for document content
         this.documentCache = new Map();
-        
-        // Testcase state management
         this.testcaseVersions = [];
         this.currentTestcaseVersion = null;
         this.testcaseCache = new Map();
+        
+        // BRD children FRD tracking
+        this.brdChildrenFRDs = [];
     }
 
     // Navigation methods
     showStep(stepNumber) {
-        // Hide all steps
         document.querySelectorAll('.step').forEach(step => {
             step.classList.remove('active');
         });
 
-        // Show requested step
         const step = document.getElementById(`step${stepNumber}`);
         if (step) {
             step.classList.add('active');
@@ -64,7 +62,6 @@ class App {
         }
 
         projectsList.innerHTML = this.projects.map(project => {
-            // Count documents - handle different response structures
             const docCount = project.documents?.length || project.document_count || 0;
             
             return `
@@ -79,7 +76,6 @@ class App {
             `;
         }).join('');
 
-        // Add click handlers
         document.querySelectorAll('.project-card').forEach(card => {
             card.addEventListener('click', () => {
                 const projectId = card.dataset.projectId;
@@ -97,10 +93,7 @@ class App {
 
             const response = await apiService.createProject(projectData);
             
-            // Add to local array
             this.projects.push(response);
-            
-            // Re-render
             this.renderProjects();
             
             return response;
@@ -112,22 +105,15 @@ class App {
 
     async selectProject(projectId) {
         try {
-            // Fetch project with documents in a single API call
             const response = await apiService.getProject(projectId);
             this.currentProject = response;
-
-            // Extract documents from the response
             this.documents = response.documents || [];
 
-            // Update UI
             document.getElementById('selectedProjectTitle').textContent = this.currentProject.name;
             document.getElementById('projectDescription').textContent = 
                 this.currentProject.description || 'No description available';
 
-            // Render documents (already loaded from project API)
             this.renderDocuments();
-
-            // Navigate to project details
             this.goToStep(2);
         } catch (error) {
             console.error('Failed to select project:', error);
@@ -140,7 +126,6 @@ class App {
         try {
             const response = await apiService.listDocuments(projectId);
             this.documents = response.documents || response || [];
-
             this.renderDocuments();
         } catch (error) {
             console.error('Failed to load documents:', error);
@@ -161,7 +146,6 @@ class App {
         }
 
         documentsList.innerHTML = this.documents.map(doc => {
-            // Extract filename from file_path (handle both filename and file_path)
             const fileName = this.getFileNameFromPath(doc.filename || doc.file_path || 'Unknown Document');
             
             return `
@@ -180,7 +164,6 @@ class App {
             `;
         }).join('');
 
-        // Add click handlers for documents
         document.querySelectorAll('.document-item').forEach(item => {
             item.addEventListener('click', () => {
                 const docId = item.dataset.documentId;
@@ -191,25 +174,17 @@ class App {
         });
     }
 
-    // Helper method to extract filename from path
     getFileNameFromPath(path) {
         if (!path) return 'Unknown Document';
-        
-        // Handle both forward and backward slashes
         const parts = path.split(/[/\\]/);
         const fileName = parts[parts.length - 1];
-        
-        // Remove doc_X_ prefix if exists (e.g., "doc_1_FRD_Payment_System.pdf")
         return fileName.replace(/^doc_\d+_/, '');
     }
 
     async uploadDocument(projectId, formData) {
         try {
             const response = await apiService.uploadDocument(projectId, formData);
-            
-            // Reload project with documents to get updated list
             await this.selectProject(projectId);
-            
             return response;
         } catch (error) {
             console.error('Failed to upload document:', error);
@@ -225,23 +200,23 @@ class App {
                 name: fileName
             };
 
-            // Reset testcase state
             this.testcaseVersions = [];
             this.currentTestcaseVersion = null;
+            this.brdChildrenFRDs = [];
 
-            // Update UI
             document.getElementById('documentTitle').textContent = fileName;
             document.getElementById('documentMeta').textContent = `Document ID: ${documentId} | Type: ${docType}`;
             document.getElementById('documentTypeHeader').textContent = docType;
             document.getElementById('documentTypeHeader').className = `document-type-large ${docType}`;
 
-            // Navigate to document view first
             this.goToStep(3);
-
-            // Load document content
             await this.loadDocumentContent(documentId);
 
-            // Load testcases (non-blocking)
+            // Load BRD children FRDs if it's a BRD document
+            if (docType === 'BRD') {
+                await this.loadBRDChildrenFRDs(documentId);
+            }
+
             this.loadTestcases(documentId).catch(error => {
                 console.error('Failed to load testcases:', error);
                 document.getElementById('testcaseSection').innerHTML = 
@@ -259,39 +234,21 @@ class App {
             const contentDiv = document.getElementById('documentContent');
             contentDiv.innerHTML = '<div class="loading">Loading document content...</div>';
 
-            // Check cache first
             if (this.documentCache.has(documentId)) {
                 contentDiv.innerHTML = this.documentCache.get(documentId);
                 return;
             }
 
-            console.log('Fetching document content for:', documentId);
             const response = await apiService.extractDocumentText(
                 this.currentProject.id,
                 documentId
             );
 
-            console.log('Document extraction response:', response);
+            let content = response.text || response.content || response.extracted_text || 
+                         response.preview || response.data || '';
 
-            // Handle different response structures
-            let content = '';
-            if (response.text) {
-                content = response.text;
-            } else if (response.content) {
-                content = response.content;
-            } else if (response.extracted_text) {
-                content = response.extracted_text;
-            } else if (response.preview) {
-                // Handle preview field from API
-                content = response.preview;
-            } else if (response.data) {
-                content = response.data;
-            } else if (typeof response === 'string') {
+            if (typeof response === 'string') {
                 content = response;
-            } else {
-                // Show the full response structure for debugging
-                console.error('Unexpected response structure:', response);
-                content = `Unable to extract text. Response structure: ${JSON.stringify(Object.keys(response))}`;
             }
 
             if (!content || content.trim() === '') {
@@ -299,10 +256,7 @@ class App {
             }
 
             const formattedContent = this.formatDocumentContent(content);
-            
-            // Cache the content
             this.documentCache.set(documentId, formattedContent);
-            
             contentDiv.innerHTML = formattedContent;
         } catch (error) {
             console.error('Failed to load document content:', error);
@@ -312,10 +266,70 @@ class App {
     }
 
     formatDocumentContent(content) {
-        // Basic formatting for document content
         const escaped = this.escapeHtml(content);
-        // Preserve line breaks and format as preformatted text
         return `<pre class="document-text">${escaped}</pre>`;
+    }
+
+    // ==================== BRD CHILDREN FRD METHODS ====================
+    
+    async loadBRDChildrenFRDs(brdDocumentId) {
+        try {
+            const response = await apiService.getFRDsByParentBRD(brdDocumentId);
+            this.brdChildrenFRDs = response.frds || response || [];
+            
+            // Render children FRDs section if we have any
+            if (this.brdChildrenFRDs.length > 0) {
+                this.renderBRDChildrenSection();
+            }
+        } catch (error) {
+            console.error('Failed to load BRD children FRDs:', error);
+            // Don't show error - just means no converted FRDs yet
+        }
+    }
+
+    renderBRDChildrenSection() {
+        const contentDiv = document.getElementById('documentContent');
+        
+        // Add children section after main content
+        const childrenSection = document.createElement('div');
+        childrenSection.className = 'document-children';
+        childrenSection.innerHTML = `
+            <h4 style="color: #1e293b; font-size: 16px; font-weight: 600; margin-bottom: 12px;">
+                Converted FRDs (${this.brdChildrenFRDs.length})
+            </h4>
+            ${this.brdChildrenFRDs.map(frd => this.renderChildFRDItem(frd)).join('')}
+        `;
+        
+        contentDiv.appendChild(childrenSection);
+    }
+
+    renderChildFRDItem(frd) {
+        const fileName = this.getFileNameFromPath(frd.filename || frd.file_path || `FRD_${frd.id}`);
+        return `
+            <div class="child-document-item" data-frd-id="${frd.id}" data-frd-name="${this.escapeHtml(fileName)}">
+                <div class="child-doc-info">
+                    <h5>${this.escapeHtml(fileName)}</h5>
+                    <p>Created: ${this.formatDate(frd.created_at || frd.conversion_date)}</p>
+                    <span class="converted-badge">Converted FRD</span>
+                </div>
+                <span class="document-type FRD">FRD</span>
+            </div>
+        `;
+    }
+
+    setupChildFRDClickHandlers() {
+        document.querySelectorAll('.child-document-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const frdId = item.dataset.frdId;
+                const frdName = item.dataset.frdName;
+                this.openChildFRD(frdId, frdName);
+            });
+        });
+    }
+
+    async openChildFRD(frdDocumentId, frdName) {
+        // Open the child FRD document
+        await this.openDocument(frdDocumentId, 'FRD', frdName);
     }
 
     // Testcase methods
@@ -327,35 +341,319 @@ class App {
             const response = await apiService.getDocumentTestcases(documentId);
 
             if (!response || !response.testcases || response.testcases.length === 0) {
-                testcaseSection.innerHTML = '<div class="empty-state">No testcases available for this document.</div>';
+                if (this.currentDocument.type === 'BRD') {
+                    this.showBRDConversionOption(documentId);
+                } else {
+                    this.showGenerateTestcasesButton(documentId);
+                }
                 return;
             }
 
-            // Store version info and discover all available versions
             this.currentTestcaseVersion = response.version;
-            
-            // Build list of all versions from 1 to current version
             this.testcaseVersions = [];
             for (let i = 1; i <= response.version; i++) {
                 this.testcaseVersions.push(i);
             }
-            
-            // Cache this version
             this.testcaseCache.set(response.version, response);
-
             this.renderTestcases(response);
         } catch (error) {
             console.error('Failed to load testcases:', error);
-            document.getElementById('testcaseSection').innerHTML = 
-                '<div class="error-message">Failed to load testcases.</div>';
+            if (this.currentDocument.type === 'BRD') {
+                this.showBRDConversionOption(documentId);
+            } else {
+                this.showGenerateTestcasesButton(documentId);
+            }
+        }
+    }
+
+    showBRDConversionOption(documentId) {
+        const testcaseSection = document.getElementById('testcaseSection');
+        
+        // Check if we have converted FRDs
+        const hasConvertedFRDs = this.brdChildrenFRDs.length > 0;
+        
+        testcaseSection.innerHTML = `
+            <div class="generate-testcases-prompt">
+                <div class="prompt-icon"></div>
+                <h3>BRD Document Detected</h3>
+                ${hasConvertedFRDs ? `
+                    <p>This BRD has ${this.brdChildrenFRDs.length} converted FRD${this.brdChildrenFRDs.length > 1 ? 's' : ''}. Generate test cases from an existing FRD or create a new conversion.</p>
+                    <div class="prompt-buttons">
+                        <button class="btn btn-primary" id="selectExistingFRDBtn">
+                            <span class="view-icon"></span> Select Existing FRD
+                        </button>
+                        <button class="btn btn-secondary" id="convertNewFRDBtn">
+                            <span class="convert-icon"></span> Convert New FRD
+                        </button>
+                    </div>
+                ` : `
+                    <p>Convert this Business Requirements Document to Functional Requirements to generate test cases</p>
+                    <div class="prompt-buttons">
+                        <button class="btn btn-primary" id="convertBRDBtn">
+                            <span class="convert-icon"></span> Convert BRD to FRD
+                        </button>
+                    </div>
+                `}
+            </div>
+        `;
+
+        if (hasConvertedFRDs) {
+            // Show list of existing FRDs to select from
+            const selectBtn = document.getElementById('selectExistingFRDBtn');
+            if (selectBtn) {
+                selectBtn.addEventListener('click', () => {
+                    this.showExistingFRDsSelection(documentId);
+                });
+            }
+
+            const convertBtn = document.getElementById('convertNewFRDBtn');
+            if (convertBtn) {
+                convertBtn.addEventListener('click', async () => {
+                    await this.handleBRDConversion(documentId);
+                });
+            }
+        } else {
+            const convertBtn = document.getElementById('convertBRDBtn');
+            if (convertBtn) {
+                convertBtn.addEventListener('click', async () => {
+                    await this.handleBRDConversion(documentId);
+                });
+            }
+        }
+    }
+
+    showExistingFRDsSelection(brdDocumentId) {
+        const testcaseSection = document.getElementById('testcaseSection');
+        
+        testcaseSection.innerHTML = `
+            <div class="generate-testcases-prompt">
+                <div class="prompt-icon"></div>
+                <h3>Select Converted FRD</h3>
+                <p>Choose an FRD to generate test cases from:</p>
+                <div class="document-children" style="margin-left: 0; border-left: none; padding-left: 0;">
+                    ${this.brdChildrenFRDs.map(frd => {
+                        const fileName = this.getFileNameFromPath(frd.filename || frd.file_path || `FRD_${frd.id}`);
+                        return `
+                            <div class="child-document-item" data-frd-id="${frd.id}">
+                                <div class="child-doc-info">
+                                    <h5>${this.escapeHtml(fileName)}</h5>
+                                    <p>Created: ${this.formatDate(frd.created_at || frd.conversion_date)}</p>
+                                    <span class="converted-badge">Converted FRD</span>
+                                </div>
+                                <button class="btn btn-primary btn-small generate-from-frd-btn">
+                                    Generate Test Cases
+                                </button>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+                <div style="margin-top: 20px;">
+                    <button class="btn btn-secondary" id="backToBRDOptions">Back</button>
+                </div>
+            </div>
+        `;
+
+        // Add click handlers
+        document.querySelectorAll('.generate-from-frd-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const frdId = btn.closest('.child-document-item').dataset.frdId;
+                this.generateTestcasesForFRD(frdId);
+            });
+        });
+
+        document.getElementById('backToBRDOptions').addEventListener('click', () => {
+            this.showBRDConversionOption(brdDocumentId);
+        });
+    }
+
+    async generateTestcasesForFRD(frdDocumentId) {
+        try {
+            // Store FRD ID for testcase generation
+            testcaseService.frdDocumentId = frdDocumentId;
+            
+            // Generate testcases using BRD flow
+            await testcaseService.generateBRDTestcases(this, this.currentProject.id, this.currentDocument.id);
+        } catch (error) {
+            console.error('Failed to generate testcases for FRD:', error);
+            this.showError('Failed to generate testcases: ' + error.message);
+        }
+    }
+
+    // FIXED BRD CONVERSION HANDLER
+    async handleBRDConversion(documentId) {
+        const testcaseSection = document.getElementById('testcaseSection');
+        
+        testcaseSection.innerHTML = `
+            <div class="conversion-progress">
+                <div class="conversion-header">
+                    <h3>Converting BRD to FRD</h3>
+                    <div class="conversion-status">
+                        <div class="status-indicator pulse"></div>
+                        <span id="conversionStatusText">Processing document...</span>
+                    </div>
+                </div>
+                <div id="conversionContent" style="margin-top: 20px;">
+                    <div class="progress-details" id="progressDetails"></div>
+                </div>
+            </div>
+        `;
+
+        try {
+            let frdContent = '';
+            let frdDocumentId = null;
+            let totalChunks = 0;
+            let processedChunks = 0;
+            let frdFilename = null;
+            
+            const finalResult = await apiService.convertBRDToFRDStream(documentId, (event) => {
+                const statusText = document.getElementById('conversionStatusText');
+                const progressDetails = document.getElementById('progressDetails');
+                
+                if (!statusText || !progressDetails) return;
+                
+                switch (event.type) {
+                    case 'start':
+                        frdDocumentId = event.document_id;
+                        totalChunks = event.total_chunks;
+                        statusText.textContent = `Processing ${totalChunks} chunk${totalChunks > 1 ? 's' : ''}...`;
+                        progressDetails.innerHTML = '<div class="loading-spinner">⏳ Analyzing document...</div>';
+                        break;
+                        
+                    case 'batch_start':
+                        statusText.textContent = `Processing batch ${event.batch} of ${event.total_batches}...`;
+                        break;
+                        
+                    case 'chunk_complete':
+                        processedChunks++;
+                        if (event.frd_content) {
+                            frdContent += event.frd_content + '\n\n';
+                            progressDetails.innerHTML = `
+                                <div class="progress-info">
+                                    <p>Processed ${processedChunks} of ${totalChunks} chunks</p>
+                                </div>
+                                <pre class="converted-text-preview">${this.escapeHtml(frdContent.substring(0, 500))}${frdContent.length > 500 ? '...' : ''}</pre>
+                            `;
+                        }
+                        break;
+                        
+                    case 'batch_complete':
+                        statusText.textContent = `Batch ${event.batch} complete...`;
+                        break;
+                        
+                    case 'finalizing':
+                        statusText.textContent = 'Finalizing conversion...';
+                        if (event.filename) frdFilename = event.filename;
+                        if (event.document_id) frdDocumentId = event.document_id;
+                        break;
+                }
+            });
+            
+            if (finalResult) {
+                frdContent = finalResult.frd_content || frdContent;
+                frdDocumentId = finalResult.frd_document_id || frdDocumentId;
+                frdFilename = finalResult.frd_filename || frdFilename;
+            }
+            
+            const conversionContent = document.getElementById('conversionContent');
+            conversionContent.innerHTML = `
+                <div class="conversion-output-section">
+                    <div class="success-header">
+                        <span class="success-icon">✓</span>
+                        <h4>Conversion Complete</h4>
+                    </div>
+                    <div class="conversion-stats">
+                        <span>Total Chunks: ${totalChunks}</span>
+                        <span>FRD Document ID: ${frdDocumentId}</span>
+                    </div>
+                    <h5>Converted FRD Content</h5>
+                    <pre class="converted-text">${this.escapeHtml(frdContent)}</pre>
+                </div>
+            `;
+
+            testcaseService.frdDocumentId = frdDocumentId;
+            this.currentDocument.linkedFRDId = frdDocumentId;
+            this.currentDocument.linkedFRDFilename = frdFilename;
+
+            // Reload BRD children to show the new FRD
+            await this.loadBRDChildrenFRDs(documentId);
+
+            const actionDiv = document.createElement('div');
+            actionDiv.className = 'conversion-actions';
+            actionDiv.innerHTML = `
+                <button class="btn btn-primary" id="proceedWithTestcasesBtn">
+                    <span class="proceed-icon"></span> Generate Test Cases
+                </button>
+                <button class="btn btn-secondary" id="viewConvertedFRDBtn">
+                    <span class="view-icon"></span> View FRD Document
+                </button>
+            `;
+            conversionContent.appendChild(actionDiv);
+
+            document.getElementById('proceedWithTestcasesBtn').addEventListener('click', () => {
+                this.generateTestcases(this.currentProject.id, documentId);
+            });
+
+            document.getElementById('viewConvertedFRDBtn').addEventListener('click', () => {
+                this.openConvertedFRD(frdDocumentId, frdFilename);
+            });
+
+            this.showSuccess('BRD converted to FRD successfully!');
+
+        } catch (error) {
+            console.error('BRD conversion failed:', error);
+            const conversionContent = document.getElementById('conversionContent');
+            if (conversionContent) {
+                conversionContent.innerHTML = `
+                    <div class="error-message">
+                        <span class="error-icon"></span>
+                        <p>Failed to convert BRD: ${error.message}</p>
+                    </div>
+                `;
+            }
+            this.showError('Failed to convert BRD: ' + error.message);
+        }
+    }
+
+    openConvertedFRD(frdDocumentId, frdName) {
+        const fileName = frdName || `Converted_FRD_${frdDocumentId}`;
+        this.openDocument(frdDocumentId, 'FRD', fileName);
+    }
+
+    showGenerateTestcasesButton(documentId) {
+        const testcaseSection = document.getElementById('testcaseSection');
+        testcaseSection.innerHTML = `
+            <div class="generate-testcases-prompt">
+                <div class="prompt-icon"></div>
+                <h3>No Test Cases Available</h3>
+                <p>Generate comprehensive test cases for this document using AI</p>
+                <button class="btn btn-primary" id="generateTestcasesBtn">
+                    <span class="generate-icon"></span> Generate Test Cases
+                </button>
+            </div>
+        `;
+
+        const generateBtn = document.getElementById('generateTestcasesBtn');
+        if (generateBtn) {
+            generateBtn.addEventListener('click', () => {
+                this.generateTestcases(this.currentProject.id, documentId);
+            });
+        }
+    }
+
+    async generateTestcases(projectId, documentId) {
+        try {
+            const docType = this.currentDocument.type;
+            await testcaseService.generateTestcases(this, projectId, documentId, docType);
+        } catch (error) {
+            console.error('Failed to generate testcases:', error);
+            this.showError('Failed to generate testcases: ' + error.message);
         }
     }
 
     async loadTestcaseVersion(documentId, version) {
         try {
-            // Check cache first
             if (this.testcaseCache.has(version)) {
-                console.log('Loading version from cache:', version);
                 const response = this.testcaseCache.get(version);
                 this.currentTestcaseVersion = version;
                 this.renderTestcases(response);
@@ -365,14 +663,11 @@ class App {
             const testcaseSection = document.getElementById('testcaseSection');
             testcaseSection.innerHTML = '<div class="loading">Loading testcases...</div>';
 
-            console.log('Fetching version from API:', version);
             const response = await apiService.getDocumentTestcases(documentId, version);
 
-            // Cache this version
             this.testcaseCache.set(version, response);
             this.currentTestcaseVersion = version;
             
-            // Update available versions if this is a new max
             if (!this.testcaseVersions.includes(version)) {
                 this.testcaseVersions.push(version);
                 this.testcaseVersions.sort((a, b) => a - b);
@@ -391,6 +686,7 @@ class App {
         const testcases = data.testcases || [];
         const version = data.version || 1;
         const testcasesCount = data.testcases_count || testcases.length;
+        
         const maxVersion = Math.max(...this.testcaseVersions);
 
         testcaseSection.innerHTML = `
@@ -404,7 +700,7 @@ class App {
                         <button class="version-btn" id="prevVersion" ${version <= 1 ? 'disabled' : ''}>
                             &lt;
                         </button>
-                        <span class="version-label">Version ${version}</span>
+                        <span class="version-label">Version ${version} of ${maxVersion}</span>
                         <button class="version-btn" id="nextVersion" ${version >= maxVersion ? 'disabled' : ''}>
                             &gt;
                         </button>
@@ -419,24 +715,31 @@ class App {
             </div>
             
             <div class="refine-section">
-                <button class="btn btn-secondary" id="refineTestcasesBtn" disabled>
-                    <span class="refine-icon">✨</span> Refine Test Cases
-                </button>
-                <div class="inline-chat" id="inlineChat" style="display: none;">
+                <div class="refine-header">
+                    <h4>Refine Test Cases</h4>
+                    <p class="refine-subtitle">Use AI to improve or modify these test cases</p>
+                </div>
+                <div class="inline-chat">
                     <textarea 
                         class="chat-input" 
-                        placeholder="Describe how you want to refine these test cases..."
+                        id="refineInput"
+                        placeholder="Describe how you want to refine these test cases... (e.g., 'Add more edge cases', 'Make steps more detailed', 'Add security test cases')"
                         rows="3"
                     ></textarea>
                     <div class="chat-actions">
-                        <button class="btn btn-secondary btn-small" id="cancelRefine">Cancel</button>
-                        <button class="btn btn-primary btn-small" id="sendRefine" disabled>Send</button>
+                        <button class="btn btn-secondary btn-small" id="cancelRefine">Clear</button>
+                        <button class="btn btn-primary btn-small" id="sendRefine">
+                            <span class="send-icon"></span> Send
+                        </button>
+                    </div>
+                    <div class="integration-notice" id="integrationNotice" style="display: none;">
+                        <span class="notice-icon"></span>
+                        <span id="noticeText">Processing...</span>
                     </div>
                 </div>
             </div>
         `;
 
-        // Add event listeners
         const prevBtn = document.getElementById('prevVersion');
         const nextBtn = document.getElementById('nextVersion');
         const downloadBtn = document.getElementById('downloadTestcases');
@@ -456,6 +759,34 @@ class App {
         if (downloadBtn) {
             downloadBtn.addEventListener('click', () => {
                 this.downloadTestcases(data, version);
+            });
+        }
+
+        const refineInput = document.getElementById('refineInput');
+        const sendRefineBtn = document.getElementById('sendRefine');
+        const cancelRefineBtn = document.getElementById('cancelRefine');
+
+        if (sendRefineBtn) {
+            sendRefineBtn.addEventListener('click', async () => {
+                const inputValue = refineInput.value.trim();
+                if (inputValue) {
+                    const docType = this.currentDocument.type;
+                    await chatService.sendChatUpdate(
+                        this,
+                        this.currentProject.id,
+                        this.currentDocument.id,
+                        docType,
+                        inputValue,
+                        true
+                    );
+                }
+            });
+        }
+
+        if (cancelRefineBtn) {
+            cancelRefineBtn.addEventListener('click', () => {
+                refineInput.value = '';
+                document.getElementById('integrationNotice').style.display = 'none';
             });
         }
     }
@@ -533,7 +864,6 @@ class App {
             content += `${'-'.repeat(80)}\n\n`;
         });
 
-        // Create and download file
         const blob = new Blob([content], { type: 'text/plain' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -577,7 +907,6 @@ class App {
         alert('Success: ' + message);
     }
 
-    // Clear cache method
     clearCache() {
         this.documentCache.clear();
         this.testcaseCache.clear();
@@ -589,3 +918,4 @@ const app = new App();
 
 // Make it available globally
 window.app = app;
+ 
